@@ -31,14 +31,16 @@ check_module(MPath) ->
         false -> {cannot_access, MPath}
     end.
 
-get_calls(Modules) ->
+get_calls(MPaths) ->
     {ok, _} = xref:start(xr()),
-    [ {ok, _} = xref:add_module(xr(), M) || M <- Modules ],
+    [ {ok, _} = xref:add_module(xr(), M) || M <- MPaths ],
     {ok, _} = xref:q(xr(), "E", [{verbose, false}]).
 
 make_dot(Name, Edges) ->
+    Vertices = all_vertices(Edges),
     ["digraph ", Name, " {\n",
      style_header(),
+     make_dot_vertices(Vertices),
      make_dot_(Edges),
      "}\n"].
 
@@ -50,9 +52,35 @@ make_dot_(Edges) ->
       || {From, To} <- Edges ].
 
 format_mfa({M, F, A}) -> io_lib:format("\"~ts:~ts/~b\"", [M, F, A]).
+format_fa({_M, F, A}) -> io_lib:format("\"~ts/~b\"", [F, A]).
 
 print(Fmt, Args) ->
     io:format(Fmt, Args).
 
 %% xref handle
 xr() -> ?MODULE.
+
+all_vertices(Edges) ->
+    lists:usort(lists:flatten(lists:map(fun erlang:tuple_to_list/1, Edges))).
+
+make_dot_vertices(Vertices) ->
+    GroupedVertices = group_vertices(Vertices),
+    [make_module_vertices(M, MVertices) || {M, MVertices} <- maps:to_list(GroupedVertices)].
+
+make_module_vertices(Module, Vertices) ->
+    ModName = io_lib:format("~p", [Module]),
+    ["  subgraph cluster_", ModName, " {\n",
+      "    label=", ModName, "\n",
+      "    color=blue;\n",
+     [["    ", format_mfa(Vertex), " [label=", format_fa(Vertex), "];\n"] || Vertex <- Vertices],
+     "  }\n\n"
+    ].
+
+group_vertices(Vertices) ->
+    lists:foldl(
+        fun({M, _F, _A} = MFA, Acc) ->
+            Acc#{M => [MFA | maps:get(M, Acc, [])]}
+        end,
+        #{},
+        Vertices
+    ).
