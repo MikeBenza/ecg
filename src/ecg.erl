@@ -9,11 +9,12 @@ main(Args) ->
     [Name | Modules] = Args,
     print("~ts\n", [run(Name, Modules)]).
 
-run(Name, Modules) ->
-    check_modules(Modules),
-    {ok, Calls} = get_calls(Modules),
+run(Name, ModulePaths) ->
+    check_modules(ModulePaths),
+    {ok, Calls} = get_calls(ModulePaths),
+    Modules = [list_to_atom(filename:rootname(filename:basename(MP))) || MP <- ModulePaths],
     %print("calls: ~p\n", [Calls]),
-    make_dot(Name, Calls).
+    make_dot(Name, Modules, Calls).
 
 check_modules(Modules) ->
     case catch lists:all(fun
@@ -36,11 +37,11 @@ get_calls(MPaths) ->
     [ {ok, _} = xref:add_module(xr(), M) || M <- MPaths ],
     {ok, _} = xref:q(xr(), "E", [{verbose, false}]).
 
-make_dot(Name, Edges) ->
+make_dot(Name, TargetModules, Edges) ->
     Vertices = all_vertices(Edges),
     ["digraph ", Name, " {\n",
      style_header(),
-     make_dot_vertices(Vertices),
+     make_dot_vertices(TargetModules, Vertices),
      make_dot_(Edges),
      "}\n"].
 
@@ -63,9 +64,10 @@ xr() -> ?MODULE.
 all_vertices(Edges) ->
     lists:usort(lists:flatten(lists:map(fun erlang:tuple_to_list/1, Edges))).
 
-make_dot_vertices(Vertices) ->
+make_dot_vertices(TargetModules, Vertices) ->
     GroupedVertices = group_vertices(Vertices),
-    [make_module_vertices(M, MVertices) || {M, MVertices} <- maps:to_list(GroupedVertices)].
+    SelectedGroupedVertices = maps:with(TargetModules, GroupedVertices),
+    [make_module_vertices(M, MVertices) || {M, MVertices} <- maps:to_list(SelectedGroupedVertices)].
 
 make_module_vertices(Module, Vertices) ->
     ModName = io_lib:format("~p", [Module]),
